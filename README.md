@@ -1,8 +1,8 @@
-# AD3: A Multi-Scale Asynchronous Divide-Diffuse-Decode Diffusion Framework for TSP Solving [Scalable Data Science]
-Code for the paper AD3: A Multi-Scale Asynchronous Divide-Diffuse-Decode Diffusion Framework for TSP Solving [Scalable Data Science]
+# HiDiff: A Large-Scale TSP Solver via Hierarchical Diffusion and Asynchronous Divide-Conquer Schema
+Code for the paper HiDiff: A Large-Scale TSP Solver via Hierarchical Diffusion and Asynchronous Divide-Conquer Schema
 
 ## Dependencies
-AD3 is built in Python 3.8.13  and Pytorch  1.11.0. 
+HiDiff is built in Python 3.8.13  and Pytorch  1.11.0. 
 And Please use the following command to install the requirements:
 ```bash
 pip install -r requirements.txt
