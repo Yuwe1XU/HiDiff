@@ -8,7 +8,8 @@ And Please use the following command to install the requirements:
 pip install -r requirements.txt
 ```
 ## ckpt
-The models for reproduce could be download from https://drive.google.com/drive/folders/16taOEsz7L__BpKGVBh3oU3r5rvMYFdbC?usp=drive_link
+The models for reproduce could be download from https://drive.google.com/drive/folders/16taOEsz7L__BpKGVBh3oU3r5rvMYFdbC?usp=drive_link .
+
 The model files are placed in the "storage/ckpt/" directory by default.
 
 ## Evaluate
