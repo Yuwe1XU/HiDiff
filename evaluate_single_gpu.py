@@ -6,7 +6,6 @@ import numpy as np
 import argparse
 import logging, time
 from tqdm import tqdm as tqdm_orig
-import torch.multiprocessing as mp
 import threading
 import copy
 import asyncio
@@ -78,7 +77,8 @@ class ModelEngine_L1(COMetaModel):
         #For less GPU memory with flexible batchsize
         length_xt = xt[0].shape[0] * len(xt)
         if isinstance(xt, list): xt = torch.stack(xt, dim=0)
-        xt = xt.view(length_xt// B,  B, scale_1extend, scale_1extend)
+        
+        # xt = xt.view(length_xt// B,  B, scale_1extend, scale_1extend)
 
         for batch in self.dataloader:
             if self.sparse > 0:
@@ -97,11 +97,13 @@ class ModelEngine_L1(COMetaModel):
                 src, dst = edge_index
                 xt_1 = xt_1[0][src, dst]  
 
+
             for i in range(steprange[0], steprange[1]):
                 t1, t2 = self.time_schedule(i)
                 t1 = np.array([t1]).astype(int)
                 t2 = np.array([t2]).astype(int)
                 xt_1 = self.model.categorical_denoise_step(points, xt_1, t1, device, edge_index=edge_index, target_t=t2)
+
 
             batch_idx += 1
             xt_4view = xt_1[0]
@@ -112,7 +114,7 @@ class ModelEngine_L1(COMetaModel):
 
                 intra_noise_prop = noise_prop
                 inter_noise_prop = noise_prop*0.8
-                groups     = B // sG2_times
+                
 
                
                 if self.sparse > 0:
@@ -124,16 +126,21 @@ class ModelEngine_L1(COMetaModel):
                     adj[src, dst] = 1.0
                     xt_1_list.append(adj)
                 else:
-                    xt_1 = xt_1[:, :scale1_main, :scale1_main]
-                    xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-                    xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
-                    xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
+                    xt_1_list.append(xt_1)
             else:
                 xt_2_list.append(xt_1)
         
         if self.sparse > 0:
-            groups = 1
+            groups = length_xt // sG2_times
             xt_1 = torch.stack(xt_1_list, dim=0)
+            xt_1 = xt_1[:, :scale1_main, :scale1_main]
+            xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
+            xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+            # xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
+            xt_2_list = torch.stack(xt_groups, dim=0).unsqueeze(1).cuda(device=device)
+        else:
+            groups     = length_xt // sG2_times
+            xt_1 = torch.cat(xt_1_list, dim=0)
             xt_1 = xt_1[:, :scale1_main, :scale1_main]
             xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
             xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
@@ -172,7 +179,7 @@ class ModelEngine_L1(COMetaModel):
         
         xt_grouped = xt_1.view(1, len(xt), scale1_main, scale1_main)
 
-        # 先构造 5 个子图的 block-diagonal (250×250)
+        # Build a block-diagonal matrix from 5 subgraphs (250x250)
         block_diag = torch.block_diag(*[xt_grouped[0, k] for k in range(self.args.GPU_num)])
         xt = torch.stack([block_diag], dim=0).cuda(device=device)
         
@@ -218,17 +225,21 @@ def test_multilayer_4Sparse(ME3, ME2, total_len, device = 0):
     device = f'cuda:{device}'
 
     for ss in range(ME3.args.sequential_sampling): 
-        _, points = next(iter(ME3.dataloader))
+        _, points, edge_index, edge_indicator = next(iter(ME3.dataloader))
         B, scale1_extend, _ = points.shape
 
-        xt = torch.randn((int(ME3.lendataset//B), B, scale1_extend, scale1_extend), dtype=torch.float32, device = device)
+        xt = torch.randint(low=0, high=2, size=(int(ME3.lendataset//B), B, scale1_extend, scale1_extend), dtype=torch.float32, device = device)
         ms_steps = [int(i* ME3.args.inference_diffusion_steps) for i in ME3.args.multiscale_prop]
 
         L3_sGcount, L3_sG2_times = ME3.args.L3_clusternum, ME3.args.L32L2_times
         L2_sGcount = ME3.args.L3_clusternum//ME3.args.L32L2_times
         L2_sG2_times = L2_sGcount//ME3.args.GPU_num
+        starttime = time.time()
         xt = ME3.test_onelayer(xt, sG_count= L3_sGcount, sG2_times= L3_sG2_times, device = device, steprange=(ms_steps[0], ms_steps[1]), noise_prop=0.05, total_len= total_len)
+        # logging.info(f"Layer 1 Cost time {time.time() - starttime}")
+        starttime = time.time()
         xt = ME2.test_onelayer(xt, sG_count= L2_sGcount, sG2_times= L2_sG2_times, device = device, steprange=(ms_steps[1], ms_steps[2]), noise_prop=0.01, total_len= total_len)
+        # logging.info(f"Layer 2 Cost time {time.time() - starttime}")
         
         torch.cuda.empty_cache()
     return xt
@@ -264,8 +275,8 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
 
             # cutting
             src_all, dst_all = edge_index
-            mask = (src_all < base_scale) & (dst_all < base_scale)  # 使用 Tensor 操作，更高效
-            edge_index_sub = edge_index[:, mask]  # 筛选后的边，shape [2, E_sub]
+            mask = (src_all < base_scale) & (dst_all < base_scale)  # Tensor-based filtering for efficiency
+            edge_index_sub = edge_index[:, mask]  # Filtered edges, shape [2, E_sub]
             xt_sub_selected = xt_sub[mask] 
 
             small_adj = torch.sparse_coo_tensor(
@@ -313,7 +324,7 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
         final_tour = solved_tour[0].tolist()
         final_tour1 = mapping[final_tour]
         
-    return final_tour1
+    return final_tour1, mapping[tours[0]]
 
 def process_dividecluster(global_coord, L3sG_count, L3sG_label, scale2_times = 5):
     L2sG_label = np.full(len(global_coord), -1, dtype=int)
@@ -321,7 +332,7 @@ def process_dividecluster(global_coord, L3sG_count, L3sG_label, scale2_times = 5
     for i in range(L3sG_count):
         L3sG_idx = np.where(L3sG_label == labellist[i])[0]
         L3sG_coord = global_coord[L3sG_idx]  
-        L2sG_label_sG, L2sG_center = balanced_kmeans_mcmf_fast_v3(L3sG_coord, scale2_times, m=3)
+        L2sG_label_sG, L2sG_center = balanced_kmeans_mcmf_fast_v3(L3sG_coord, scale2_times, m=5)
         for j in range(scale2_times):
             L2sG_label_glob = labellist[i] * scale2_times + j
             L2sG_label[L3sG_idx[L2sG_label_sG == j]] = L2sG_label_glob
@@ -364,11 +375,14 @@ def parallel_Threadworker(ME3_list, ME2_list, ME1_list,  L3_enhanced_data, L2_en
         adj_list = return_list[i]  #list of tensors
         L1_xt.extend(adj_list)
 
+    
     ME1 = ME1_list[0]
     ME1.set_Data(L1_enhanced_data, batch_size=1 , device=0)
     ms_steps = [int(i* ME1.args.inference_diffusion_steps) for i in ME1.args.multiscale_prop]
+    starttime = time.time()
     with torch.no_grad():
         xt = ME1.test_finallayer(L1_xt, sG_count=1, sG2_times=1, device = 0, steprange=(ms_steps[2], ms_steps[3]), total_len= total_len)
+    # logging.info(f"Layer 3 Cost time {time.time() - starttime}")
     
     for batch in ME1.dataloader:
         _, points, edge_index, edge_indicator = batch
@@ -400,21 +414,19 @@ def load_and_preprocess_batch(batch_idx, dataset):
     L2_tour = [int(node.split('_')[-1]) for node in solver.solve_tsp()[:-1]]
 
     # L2_tour = []
-    # for node_i in L3_tour:
-    #     for node_j in range(args.scale2_times):
-    #         L2_tour.append(node_i * args.scale2_times + node_j)
+    # for node_i in L1_tour:
+    #     for node_j in range(args.L22L1_times):
+    #         L2_tour.append(node_i * args.L22L1_times + node_j)
 
-    L3_tour = []
-    for node_i in L2_tour:
-        for node_j in range(args.L32L2_times):
-            L3_tour.append(node_i * args.L32L2_times + node_j)
+    L3_tour = L2_tour
     # print("LKH time", time.time() - starttime)
 
     L1_enhanced_data, L1_cluster_global_indices, L1_main_points =  process_clusters_wotour(L1_tour, L1sG_label, global_coord)
     L2_enhanced_data, L2_cluster_global_indices, L2_main_points =  process_clusters_wtour(L2_tour, L2sG_label, global_coord, redundancy_length = 8, bridge_length=14)
-    L3_enhanced_data, L3_cluster_global_indices, L3_main_points =  process_clusters_wtour(L3_tour, L3sG_label, global_coord, redundancy_length = 3, bridge_length= 4)
+    L3_enhanced_data, L3_cluster_global_indices, L3_main_points =  process_clusters_wtour(L3_tour, L3sG_label, global_coord, redundancy_length = 8, bridge_length=14)
     
-    print(batch_idx, "-th Dividing Cost time", time.time() - starttime)
+    print(f"{batch_idx}--th Dividing Cost time {time.time() - starttime}")
+    
 
     return [L3_enhanced_data, L2_enhanced_data, L1_enhanced_data, global_coord, L1sG_label, L1sG_center, L1_tour, L1_cluster_global_indices, L1_main_points]
 
@@ -425,7 +437,7 @@ def run_diffusion_on_gpu(batch_idx, data, ME3_list, ME2_list, ME1_list):
     [L3_enhanced_data, L2_enhanced_data, L1_enhanced_data] = data[:3]
     len_tour = len(data[3])
     solution_adjmatrix, solution_points = parallel_Threadworker(ME3_list, ME2_list, ME1_list, L3_enhanced_data, L2_enhanced_data, L1_enhanced_data, len_tour)
-    print(batch_idx,"-th Diffusing cost time", time.time() - starttime)
+    print(f"{batch_idx}--th Diffusing Cost time {time.time() - starttime}")
     return (solution_adjmatrix, solution_points)
 
 
@@ -441,13 +453,20 @@ def decode_and_store_result(batch_idx, args, data, result):
     global_coord, L3sG_label, L3sG_center, L3_tour, cluster_global_indices3, main_points3 = data[3:]
     starttime = time.time()
     # global_tour_indices = process_test_end(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices2, main_points2)
-    global_tour_indices = process_test_end_heatmap_4Sparse(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices3, main_points3, global_coord, 
-                                                   merge_thr=args.merge_threshold, test_2opt_iterations= args.opt_iter, excute_num = args.decoexcute_num)
-    print(batch_idx, '-th Decoding cost time:', time.time() - starttime)
+    global_tour_indices, _ = process_test_end_heatmap_4Sparse(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices3, main_points3, global_coord, 
+                                                            test_2opt_iterations= args.two_opt_iterations, excute_num = args.decoexcute_num)
+    print(f"{batch_idx}--th Decoding Cost time {time.time() - starttime}")
 
-
+    # total_cost = compute_tour_cost(global_coord, np.array(global_tour_indices))
+    # merged_cost = compute_tour_cost(global_coord, np.array(merged_tour))
+    # logging.info(f"Merged Subgraph tour cost: {merged_cost:.2f}, using time: ")
+    # logging.info(f"Clustered Subgraph with Diffusion, tour cost: {total_cost:.2f}, using time: ")
+    # if total_cost < 748000:
+    #     plot_global(global_coord, L3sG_label, np.array(merged_tour), L3sG_center, super_tour=L3_tour, save_path='./figures/global_tsp_result_diff_2.png')
+    #     plot_global(global_coord, L3sG_label, np.array(global_tour_indices), L3sG_center, super_tour=L3_tour, save_path='./figures/global_tsp_result_diff_3.png')
+    #     time.sleep(10)
     #Temporary Storage
-    append_array_to_list_dir('storage/temp_results/tour_solutions', global_tour_indices)
+    append_array_to_list_dir('storage/temp_results/'+args.temp_results_folder, global_tour_indices)
 
 
 def set_global_seed(seed: int):
@@ -476,8 +495,8 @@ async def async_main(args, whole_dataset, ME3_list, ME2_list, ME1_list):
         for b in range(total):
             data = await loop.run_in_executor(loader_executor, load_and_preprocess_batch, b, whole_dataset[b])
             await q1.put((b, data))
-            # q1.maxsize=2 会在 “窗口” 超过2时自动阻塞，保证后续只跑到 N+1
-        await q1.put(None)  # 结束标记
+            # q1.maxsize=2 enforces backpressure when the pipeline window exceeds 2 (up to N+1 in flight)
+        await q1.put(None)  # End marker
 
     # Stage 2: GPU (Diffuse)
     async def gpu_worker():
@@ -507,40 +526,41 @@ async def async_main(args, whole_dataset, ME3_list, ME2_list, ME1_list):
 
 def main(args):
     #Initialization
-    args.multiscale_prop = ast.literal_eval(args.multiscale_prop)
+    args.multiscale_prop = [0, args.multiscale_prop1, args.multiscale_prop2, 1]
+    print(args.multiscale_prop)
     setup_logging(args, args.logfile_path ,logging.INFO if not args.debug else logging.DEBUG)
+    starttime = time.time()
 
-    for filename in os.listdir('storage/temp_results/tour_solutions'):
-        file_path = os.path.join('storage/temp_results/tour_solutions', filename)
+    for filename in os.listdir('storage/temp_results/'+args.temp_results_folder):
+        file_path = os.path.join('storage/temp_results/'+args.temp_results_folder, filename)
         if os.path.isfile(file_path) or os.path.islink(file_path):
             os.remove(file_path) 
 
-    starttime = time.time()
-    L3ME_base = ModelEngine_L1(args)
+    L3ME_base = ModelEngine_L1(args, sparse=args.L3_sparse)
     L3ME_base.set_Model(args.L3_model_ckptpath)
     L2ME_base = ModelEngine_L1(args, sparse=args.L2_sparse)
     L2ME_base.set_Model(args.L2_model_ckptpath)
     L1ME_base = ModelEngine_L1(args, sparse=args.L1_sparse)
     L1ME_base.set_Model(args.L1_model_ckptpath)
 
-    # 为每张卡 clone 一份模型
+    # Clone one model copy per GPU
     L3ME_list = [copy.deepcopy(L3ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L2ME_list = [copy.deepcopy(L2ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L1ME_list = [L1ME_base]
     print("Set Model time", time.time() - starttime)
 
-    
+    starttime = time.time()
     whole_dataset = TSPGraphDataset(args.data_path, sparse_factor=-1)
     
     
     asyncio.run(async_main(args, whole_dataset, L3ME_list, L2ME_list, L1ME_list))
     logging.info(f"Average time for {len(whole_dataset)} using time: {((time.time() - starttime) / len(whole_dataset))}")
 
-
-    list_dir = os.path.join('storage/temp_results', "tour_solutions")
+    whole_dataset = TSPGraphDataset(args.data_path, sparse_factor=-1)
+    list_dir = os.path.join('storage/temp_results', args.temp_results_folder)
     idx = 0
     avg_gap = 0
-    success_time = len(whole_dataset)
+    avg_cost = 0
     for fname in sorted(os.listdir(list_dir)):
         if fname.endswith(".npy"):
             _, nodes, _, GT_tour = whole_dataset[idx] 
@@ -552,19 +572,21 @@ def main(args):
             if args.GT_had: 
                 GT_cost = compute_tour_cost(global_coord, GT_tour)
                 gap = (solved_cost/GT_cost - 1)*100
-                if gap > 0:   avg_gap += gap
-                else:         success_time -= 1
+                avg_gap += gap
                 logging.info(f"{idx}-th Graph with Diffusion, tour cost: {solved_cost:.2f}, GT cost: {GT_cost:.2f}, with GAP = {gap:.3f}%")
             else: 
+                avg_cost += solved_cost
                 logging.info(f"{idx}-th Graph with Diffusion, tour cost: {solved_cost:.2f}")
             idx += 1
             
-            # L3sG_label, L3sG_center = balanced_kmeans_mcmf_fast_v3(global_coord, 1)
-            # plot_global(global_coord, L3sG_label, np.array(solved_tour_indices),  L3sG_center, save_path='./figures/global_tsp_result_diff_3.png')
+            L3sG_label, L3sG_center = balanced_kmeans_mcmf_fast_v3(global_coord, 1)
+            plot_global(global_coord, L3sG_label, np.array(solved_tour_indices),  L3sG_center, save_path='./figures/global_tsp_result_diff_3.png')
             # time.sleep(5)
 
-    if args.GT_had: logging.info(f"Average gap for {success_time} is {(avg_gap/success_time):.3f}%")
-
+    if args.GT_had: 
+        logging.info(f"Average gap for {len(whole_dataset)} is {(avg_gap/len(whole_dataset)):.3f}%")
+    else:
+        logging.info(f"Average cost for {len(whole_dataset)} is {(avg_cost/len(whole_dataset)):.2f}")
 
 
 
@@ -574,10 +596,10 @@ if __name__ == "__main__":
     # Scale Parameters
     parser.add_argument("--redundancy_length", type=int, default=3, help="Number of nodes to be added in one side of target subgraph")
     parser.add_argument("--bridge_length", type=int, default=4, help="Number of nodes to be added for cycle")
-    parser.add_argument("--L3_clusternum", type=int, default=20, help="Number of clustered subgraphs") #200/40
-    parser.add_argument('--L3_batchsize', type=int, default=20)
-    parser.add_argument('--L2_batchsize', type=int, default=2)
-    parser.add_argument("--L32L2_times", type=int, default=5)
+    parser.add_argument("--L3_clusternum", type=int, default=4, help="Number of clustered subgraphs") #200/40
+    parser.add_argument('--L3_batchsize', type=int, default=1)
+    parser.add_argument('--L2_batchsize', type=int, default=1)
+    parser.add_argument("--L32L2_times", type=int, default=1)
     parser.add_argument("--L22L1_times", type=int, default=4)
     parser.add_argument("--pre_prop", type=int, default=0.8)
     parser.add_argument("--noise_prop", type=int, default=0.03)
@@ -586,17 +608,20 @@ if __name__ == "__main__":
     
 
     # Diffusion Parameters
-    parser.add_argument("--L3_model_ckptpath", type=str, default="storage/ckpt/TSP60_EP50.ckpt", help="Path to the checkpoint")
-    parser.add_argument("--L2_model_ckptpath", type=str, default="storage/ckpt/TSP280_EP50.ckpt", help="Path to the checkpoint")
-    parser.add_argument("--L2_sparse", type=int, default=-1)
-    parser.add_argument("--L1_model_ckptpath", type=str, default="storage/ckpt/epoch=32.ckpt", help="Path to the checkpoint")
+    parser.add_argument("--L3_model_ckptpath", type=str, default="storage/ckpt/epoch_32.ckpt", help="Path to the checkpoint")
+    parser.add_argument("--L3_sparse", type=int, default=20)
+    parser.add_argument("--L2_model_ckptpath", type=str, default="storage/ckpt/epoch_32.ckpt", help="Path to the checkpoint")
+    parser.add_argument("--L2_sparse", type=int, default=60)
+    parser.add_argument("--L1_model_ckptpath", type=str, default="storage/ckpt/epoch_32.ckpt", help="Path to the checkpoint")
     parser.add_argument("--L1_sparse", type=int, default=100)
-    parser.add_argument("--multiscale_prop", type=str, default='[0,0.8,0.9,1]', help="Path to the checkpoint")
+    # parser.add_argument("--multiscale_prop", type=str, default='[0,0.1,0.3,1]', help="Path to the checkpoint")
+    parser.add_argument("--multiscale_prop1", type=float, default=0.1, help="Path to the checkpoint")
+    parser.add_argument("--multiscale_prop2", type=float, default=0.3, help="Path to the checkpoint")
     
     parser.add_argument('--diffusion_type', type=str, default='categorical')
     parser.add_argument('--diffusion_schedule', type=str, default='cosine')
-    parser.add_argument('--diffusion_steps', type=int, default=200)
-    parser.add_argument('--inference_diffusion_steps', type=int, default=40)
+    parser.add_argument('--diffusion_steps', type=int, default=1000)
+    parser.add_argument('--inference_diffusion_steps', type=int, default=50)
     parser.add_argument('--inference_schedule', type=str, default='cosine')
     parser.add_argument('--inference_trick', type=str, default="ddim")
     parser.add_argument('--sequential_sampling', type=int, default=1)
@@ -606,7 +631,7 @@ if __name__ == "__main__":
     parser.add_argument('--hidden_dim', type=int, default=256)
     parser.add_argument('--sparse_factor', type=int, default=-1)
     parser.add_argument('--aggregation', type=str, default='sum')
-    parser.add_argument('--two_opt_iterations', type=int, default=1000)
+    parser.add_argument('--two_opt_iterations', type=int, default=200)
     parser.add_argument('--save_numpy_heatmap', action='store_true')
     parser.add_argument('--use_activation_checkpoint', action='store_true', default=False)
 
@@ -615,22 +640,21 @@ if __name__ == "__main__":
     parser.add_argument("--if_plot_subgraph", default=True, action="store_true", help="Plot the cluster subgraph tour")
     parser.add_argument("--if_plot_global", default=True, action="store_true", help="Plot the global TSP tour")
     #Paths regarding data and figure storage
-    parser.add_argument("--logfile_path", type=str, default="./storage/logs/tsp_large_LKH_v87.log", help="Path to the log file")
+    parser.add_argument("--logfile_path", type=str, default="./storage/logs/tsp_large_LKH_87.log", help="Path to the log file")
+    parser.add_argument("--temp_results_folder", type=str, default="10000_tour_solutions", help="Path to the temp solution file")
     parser.add_argument("--debug", default=False, action="store_true", help="Debug mode")
     #figure storage is not added because it is not used in the main function
-    parser.add_argument("--data_path", type=str, default="./storage/data/tsp/tsp1000_test_concorde_16item.txt", help="Path to the TSP dataset")
+    parser.add_argument("--data_path", type=str, default="./storage/data/tsp/tsp1000_test_concorde.txt", help="Path to the TSP dataset")
 
     #Parallel
     # parser.add_argument('--Asynch_time', type=int, default=4)
-    parser.add_argument('--GPU_num', type=int, default=2)
+    parser.add_argument('--GPU_num', type=int, default=1)
     parser.add_argument('--GT_had', action='store_true')
     parser.add_argument('--loadexcute_num', type=int, default=8)
     parser.add_argument('--decoexcute_num', type=int, default=24)
-    parser.add_argument('--merge_threshold', type=int, default=1500)
-    parser.add_argument('--opt_iter', type=int, default=1000)
 
-    # 解析参数
+    # Parse arguments
     args = parser.parse_args()
 
-    # 调用主函数
+    # Call the main function
     main(args)
