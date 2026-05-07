@@ -8,8 +8,7 @@ And Please use the following command to install the requirements:
 pip install -r requirements.txt
 ```
 ## ckpt
-The models for reproduce is Epoch_32.ckpt
-The model files are placed in the "storage/ckpt/" directory by default.
+The models for reproduce is epoch_32.ckpt, placed in the "storage/ckpt/" directory by default.
 
 ## Evaluate
 We provide both single-GPU and multi-GPU configurations in AD3_evaluate_S.py and AD3_evaluate_P.py. We are currently integrating them.
