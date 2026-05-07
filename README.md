@@ -8,7 +8,7 @@ And Please use the following command to install the requirements:
 pip install -r requirements.txt
 ```
 ## ckpt
-The models for reproduce could be download from https://anonymous.4open.science/r/HiDiff-N11315
+The models for reproduce is Epoch_32.ckpt
 The model files are placed in the "storage/ckpt/" directory by default.
 
 ## Evaluate
