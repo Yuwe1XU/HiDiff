@@ -8,7 +8,7 @@ And Please use the following command to install the requirements:
 pip install -r requirements.txt
 ```
 ## ckpt
-The models for reproduce could be download from https://drive.google.com/drive/folders/16taOEsz7L__BpKGVBh3oU3r5rvMYFdbC?usp=drive_link
+The models for reproduce could be download from https://anonymous.4open.science/r/HiDiff-N11315
 The model files are placed in the "storage/ckpt/" directory by default.
 
 ## Evaluate
@@ -17,6 +17,7 @@ We provide both single-GPU and multi-GPU configurations in AD3_evaluate_S.py and
 - `evaluate_single_gpu.py`: single-GPU evaluation script
 - `evaluate_multi_gpu.py`: multi-GPU evaluation script
 ```
+The results are recorded in "storage/logs" directory by default.
 
 ## Usage
 Run from project root with relative paths only:

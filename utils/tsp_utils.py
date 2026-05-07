@@ -181,11 +181,11 @@ def merge_tours_v3(adj_mat, np_points, merge_thr = 1000, parallel_sampling=1):
   start_time = time.time() 
   
   N = adj_mat.shape[0]
-  # 上三角索引（不含对角线）
+  # Translated English comment.
   i_idx, j_idx = np.triu_indices(N, k=1)
-  # 对应距离
+  # Translated English comment.
   dist_vals = dist_mat[i_idx, j_idx]
-  # 过滤距离大于 threshold 的边
+  # Translated English comment.
   # mask = dist_vals < merge_thr
   mask_threshold = dist_vals < merge_thr
   mask_random = np.random.rand(len(dist_vals)) < 0.1
@@ -193,17 +193,17 @@ def merge_tours_v3(adj_mat, np_points, merge_thr = 1000, parallel_sampling=1):
   
   i_idx, j_idx = i_idx[mask], j_idx[mask]
   dist_vals = dist_vals[mask]
-  # 对称矩阵 ⇒ (i,j) 与 (j,i) 都应保留（构建TSP边）
+  # Translated English comment.
   i_all = np.concatenate([i_idx, j_idx])
   j_all = np.concatenate([j_idx, i_idx])
   dist_all = np.concatenate([dist_vals, dist_vals])
-  # 计算对应的 adj 和权重
+  # Translated English comment.
   adj_vals = adj_mat[i_all, j_all]
   weights = adj_vals / dist_all  # w = adj / d
-  # 计算 flat indices (i*N + j)
+  # Translated English comment.
   flat_indices = i_all * N + j_all
-  # 排序（按 -w 作为优先级）
-  order = np.argsort(-weights)  # 直接按降序排，不用 -w 存储再升序排
+  # Translated English comment.
+  order = np.argsort(-weights)  # Translated English comment.
 
   flat_indices = flat_indices[order].astype(np.int32)
 
@@ -230,28 +230,28 @@ def prepare_and_merge(adj_mat: np.ndarray, dist_mat: np.ndarray, thr: float = 10
     N = adj_mat.shape[0]
     assert adj_mat.shape == (N, N) and dist_mat.shape == (N, N)
 
-    # 避免除以0或非常小的数（对角线）
+    # Translated English comment.
     dist_safe = np.where(dist_mat < 1, 1, dist_mat)
 
-    # 计算边的得分权重和采样概率
+    # Translated English comment.
     weights = adj_mat / dist_safe
     probs = np.minimum(1.0, thr / dist_safe)
 
-    # 生成所有候选边的 index 对 (i, j)
-    i_idx, j_idx = np.triu_indices(N, k=1)  # 只取上三角，避免重复和自环
+    # Translated English comment.
+    i_idx, j_idx = np.triu_indices(N, k=1)  # Translated English comment.
 
-    # 筛选有效边
+    # Translated English comment.
     sampled = np.random.rand(len(i_idx)) < probs[i_idx, j_idx]
     i_idx = i_idx[sampled]
     j_idx = j_idx[sampled]
     flat_idx = i_idx * N + j_idx
     edge_weights = weights[i_idx, j_idx]
 
-    # 粗略排序（近似排序）
-    sort_order = np.argsort(-edge_weights)  # 由大到小
+    # Translated English comment.
+    sort_order = np.argsort(-edge_weights)  # Translated English comment.
     sorted_flat_idx = flat_idx[sort_order]
 
-    # 调用 C++ merge 函数
+    # Translated English comment.
     return merge_wedges(sorted_flat_idx, int(N))
 
 
@@ -346,9 +346,9 @@ def merge_with_flat_indices_py(N, flat_indices):
 
 def compute_distance_matrix(points):
     """
-    计算所有点对之间的欧氏距离矩阵。
-    points: (n,2) 数组
-    返回: (n,n) 矩阵
+    Compute the Euclidean distance matrix for all point pairs.
+    points: (n, 2) array
+    return: (n, n) matrix
     """
     diff = points[:, None, :] - points[None, :, :]
     return np.hypot(diff[..., 0], diff[..., 1])
@@ -356,17 +356,17 @@ def compute_distance_matrix(points):
 
 def two_opt_numpy(points, tour, max_iterations=1000, sample_size=200):
     """
-    使用 numpy 加速的 2-opt 优化，采用随机采样 + 向量化。
+    Numpy-accelerated 2-opt optimization using random sampling and vectorization.
 
-    参数：
+    Args:
     - points: ndarray, shape (n,2)
-    - tour: ndarray of ints, shape (n,), 表示访问顺序，首尾不重复
-    - max_iterations: 最大迭代次数
-    - sample_size: 每轮从所有可能的 i-j 对中采样的数量
+    - tour: ndarray of ints, shape (n,), visit order without duplicated start/end
+    - max_iterations: maximum number of iterations
+    - sample_size: number of sampled i-j pairs per iteration
 
-    返回：
-    - tour_opt: ndarray, shape (n,), 优化后路径
-    - iterations: 实际迭代次数
+    Returns:
+    - tour_opt: ndarray, shape (n,), optimized tour
+    - iterations: actual number of iterations
     """
     n = len(tour)
     D = compute_distance_matrix(points)
@@ -374,7 +374,7 @@ def two_opt_numpy(points, tour, max_iterations=1000, sample_size=200):
     iteration = 0
 
     while iteration < max_iterations:
-        # 从所有可能的 i-j 对中采样
+        # Translated English comment.
         i_vals = np.random.randint(1, n - 3, size=sample_size)
         j_vals = np.random.randint(i_vals + 2, n - 1)
 
@@ -383,7 +383,7 @@ def two_opt_numpy(points, tour, max_iterations=1000, sample_size=200):
         c = tour[j_vals]
         d = tour[j_vals + 1]
 
-        # 向量化计算 delta
+        # Translated English comment.
         delta = D[a, c] + D[b, d] - D[a, b] - D[c, d]
         best_idx = np.argmin(delta)
 

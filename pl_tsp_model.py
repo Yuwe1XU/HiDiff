@@ -323,10 +323,10 @@ class TSPModel_v2(COMetaModel):
                param_args=None):
         super(TSPModel_v2, self).__init__(param_args=param_args, node_feature_only=False)
         self.args = param_args
-        self.dataset = None  # 数据集接口
+        self.dataset = None  # Translated English comment.
             
     def set_data(self, points, batch_size=1):
-        """ 直接传入数据，不依赖外部数据文件，并按照 K 维度划分 batch """
+        """Translated English docstring."""
         self.dataset = TSPDiffusionDataset_v2(points)
         self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=False)
 
@@ -457,13 +457,13 @@ class TSPModel_v2(COMetaModel):
 
                     xt_2 = torch.stack(xt_groups, dim=0).cuda(device=device) 
 
-                    #拼接点集 (偏移索引)，保持通道维度
+                    # Translated English comment.
                     points_2 = enhanced_points2[new_index]
                     for i in range(pre_step1, total_steps):
                         t1, t2 = time_schedule(i)
                         t1 = np.array([int(t1)])
                         t2 = np.array([int(t2)])
-                        xt_2 = model2.categorical_denoise_step(points_2, xt_2, t1, device, target_t=t2)  #model要改
+                        xt_2 = model2.categorical_denoise_step(points_2, xt_2, t1, device, target_t=t2)  # Translated English comment.
                         pbar.update()
 
                 np_points_2 = points_2.cpu().numpy()

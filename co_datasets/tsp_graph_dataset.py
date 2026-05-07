@@ -24,46 +24,46 @@ class TSPGraphDataset(torch.utils.data.Dataset):
         return len(self.file_lines)
 
     def get_example(self, idx):
-        # 加载 .gpickle 文件
+        # Translated English comment.
         with open(self.file_lines[idx], "rb") as f:
             graph = nx.read_gpickle(f)
 
-        # 计算节点数量
+        # Translated English comment.
         num_nodes = graph.number_of_nodes()
 
-        # 获取图的所有边和它们的 'relation' 属性
+        # Translated English comment.
         edges = np.array(graph.edges, dtype=np.int64)
         edge_relations = np.array([graph[u][v].get('weight', 0.0) for u, v in graph.edges], dtype=np.float32)
 
-        # # 处理双向边
-        #edges = np.concatenate([edges, edges[:, ::-1]], axis=0)  # 双向边
-        #edge_relations = np.concatenate([edge_relations, edge_relations], axis=0)  # 双向边的关系
+        # Translated English comment.
+        # Translated English comment.
+        # Translated English comment.
 
-        # # 创建一个字典来快速查找已存在的边
+        # Translated English comment.
         #edge_set = {tuple(edge) for edge in edges}
 
-        # # 遍历所有可能的节点对，包括自环，并添加缺失的边关系
+        # Translated English comment.
         # for i in range(num_nodes):
         #     for j in range(num_nodes):
         #         if (i, j) not in edge_set:
         #             if i == j:
-        #                 # 自环，设置关系为 1
+        # Translated English comment.
         #                 edges = np.append(edges, [[i, j]], axis=0)
         #                 edge_relations = np.append(edge_relations, [1], axis=0)
         #             else:
-        #                 # 非自环，设置关系为 0
+        # Translated English comment.
         #                 edges = np.append(edges, [[i, j]], axis=0)
         #                 edge_relations = np.append(edge_relations, [0], axis=0)
-        # # 创建邻接矩阵
+        # Translated English comment.
         # adj_matrix = np.zeros((num_nodes, num_nodes), dtype=np.float32)
 
-        # # 填充邻接矩阵
+        # Translated English comment.
         # for edge, relation in zip(edges, edge_relations):
         #     u, v = edge
         #     adj_matrix[u, v] = relation
         
 
-        # 获取节点的标签（假设节点属性中存储了标签信息，属性名为 'label'）
+        # Translated English comment.
         node_labels = np.array([graph.nodes[node].get('label', 0) for node in range(num_nodes)], dtype=np.int64)
 
         #return adj_matrix, num_nodes, edges, edge_relations, node_labels

@@ -113,7 +113,8 @@ class ModelEngine_L1(COMetaModel):
 
             if noise_prop != 1:
                 if B%sG2_times != 0: "the batch size should times of multiscale"
-                scale2_main, scale2_extend = scale1_main*sG2_times, scale1_main*sG2_times + 0
+                scale2_main = scale1_main * sG2_times
+                scale2_extend = scale2_main + (self.args.redundancy_length * 2 + self.args.bridge_length)
 
                 intra_noise_prop = noise_prop
                 inter_noise_prop = noise_prop*0.8
@@ -131,7 +132,15 @@ class ModelEngine_L1(COMetaModel):
                 else:
                     xt_1 = xt_1[:, :scale1_main, :scale1_main]
                     xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-                    xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+                    xt_groups = xt2large_noise(
+                        groups,
+                        xt_grouped,
+                        [sG2_times, scale2_main, scale2_extend],
+                        intra_noise_prop,
+                        inter_noise_prop,
+                        redundancy_length=self.args.redundancy_length,
+                        bridge_length=self.args.bridge_length,
+                    )
                     xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
 
             else:
@@ -143,7 +152,15 @@ class ModelEngine_L1(COMetaModel):
                 xt_1 = torch.stack(xt_1_list, dim=0)
                 xt_1 = xt_1[:, :scale1_main, :scale1_main]
                 xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-                xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+                xt_groups = xt2large_noise(
+                    groups,
+                    xt_grouped,
+                    [sG2_times, scale2_main, scale2_extend],
+                    intra_noise_prop,
+                    inter_noise_prop,
+                    redundancy_length=self.args.redundancy_length,
+                    bridge_length=self.args.bridge_length,
+                )
                 # xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
                 xt_2_list = torch.stack(xt_groups, dim=0).unsqueeze(1).cuda(device=device)
 
@@ -207,7 +224,8 @@ class ModelEngine_L1(COMetaModel):
 
             if noise_prop != 1:
                 if B%sG2_times != 0: "the batch size should times of multiscale"
-                scale2_main, scale2_extend = scale1_main*sG2_times, scale1_main*sG2_times + 0
+                scale2_main = scale1_main * sG2_times
+                scale2_extend = scale2_main + (self.args.redundancy_length * 2 + self.args.bridge_length)
 
                 intra_noise_prop = noise_prop
                 inter_noise_prop = noise_prop*0.8
@@ -225,7 +243,15 @@ class ModelEngine_L1(COMetaModel):
                 else:
                     xt_1 = xt_1[:, :scale1_main, :scale1_main]
                     xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-                    xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+                    xt_groups = xt2large_noise(
+                        groups,
+                        xt_grouped,
+                        [sG2_times, scale2_main, scale2_extend],
+                        intra_noise_prop,
+                        inter_noise_prop,
+                        redundancy_length=self.args.redundancy_length,
+                        bridge_length=self.args.bridge_length,
+                    )
                     xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
 
             else:
@@ -237,7 +263,15 @@ class ModelEngine_L1(COMetaModel):
                 xt_1 = torch.stack(xt_1_list, dim=0)
                 xt_1 = xt_1[:, :scale1_main, :scale1_main]
                 xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-                xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+                xt_groups = xt2large_noise(
+                    groups,
+                    xt_grouped,
+                    [sG2_times, scale2_main, scale2_extend],
+                    intra_noise_prop,
+                    inter_noise_prop,
+                    redundancy_length=self.args.redundancy_length,
+                    bridge_length=self.args.bridge_length,
+                )
                 xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
 
         
@@ -260,11 +294,12 @@ def test_multilayer_4Sparse(ME3,ME2, ME1, total_len, device = 0):
 
         L3_sGcount, L3_sG2_times = ME3.args.L3_clusternum, ME3.args.L32L2_times
         L2_sGcount = ME3.args.L3_clusternum//ME3.args.L32L2_times
-        L2_sG2_times = L2_sGcount//ME3.args.GPU_num
+        L2_sG2_times = ME3.args.L22L1_times
+        L1_sGcount = L2_sGcount//L2_sG2_times
         starttime = time.time()
         xt = ME3.test_onelayer(xt, sG_count= L3_sGcount, sG2_times= L3_sG2_times, device = device, steprange=(ms_steps[0], ms_steps[1]), noise_prop=0.05, total_len= total_len)
         xt = ME2.test_onelayer(xt, sG_count= L2_sGcount, sG2_times= L2_sG2_times, device = device, steprange=(ms_steps[1], ms_steps[2]), noise_prop=0.01, total_len= total_len)
-        xt = ME1.test_onelayer(xt, sG_count= ME3.args.GPU_num , sG2_times=1, device = device, steprange=(ms_steps[2], ms_steps[3]), noise_prop=1)
+        xt = ME1.test_onelayer(xt, sG_count= L1_sGcount , sG2_times=1, device = device, steprange=(ms_steps[2], ms_steps[3]), noise_prop=1)
 
 
         edge_index_list = []
@@ -291,7 +326,7 @@ def range_preserving_rescale_matrices(matrices, min_val=1e-4, max_val=1.0):
     return [transform(m) for m in matrices]
 
 def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, cluster_global_indices, main_points, merge_points, 
-                             merge_thr = 1000, parallel_sampling = 1, test_2opt_iterations =1000, sparser = False, excute_num=8):
+                             merge_thr = 1000, parallel_sampling = 1, test_2opt_iterations =1000, sparser = False, excute_num=8, epsilon=1e-2):
     small_adjs, all_points, offset, cluster_map = [], [], 0, []
     base_scale = len(main_points[0])
     subgraph_num = len(cluster_global_indices) 
@@ -307,8 +342,8 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
 
             # cutting
             src_all, dst_all = edge_index
-            mask = (src_all < base_scale) & (dst_all < base_scale)  # Tensor-based filtering for efficiency
-            edge_index_sub = edge_index[:, mask]  # Filtered edges, shape [2, E_sub]
+            mask = (src_all < base_scale) & (dst_all < base_scale)  # Translated English comment.
+            edge_index_sub = edge_index[:, mask]  # Translated English comment.
             xt_sub_selected = xt_sub[mask] 
 
 
@@ -327,7 +362,6 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
             cluster_map.append((offset, offset + base_scale))
             offset += base_scale
 
-        epsilon = 1e-10
         small_adjs = range_preserving_rescale_matrices(small_adjs, min_val=epsilon, max_val=1.0)
 
         big_size = subgraph_num * base_scale
@@ -383,8 +417,8 @@ def process_test_end_heatmap_4Sparse_4DC(xt, edge_index_list, sequential_samplin
 
             # cutting
             # src_all, dst_all = edge_index
-            # mask = (src_all < base_scale) & (dst_all < base_scale)  # Tensor-based filtering for efficiency
-            # edge_index_sub = edge_index[:, mask]  # Filtered edges, shape [2, E_sub]
+            # Translated English comment.
+            # Translated English comment.
             # xt_sub_selected = xt_sub[mask] 
 
 
@@ -496,7 +530,7 @@ def parallel_Threadworker(ME1_list,ME2_list, ME3_list, enhanced_data1, enhanced_
     final_pts = []
 
     for i in range(GPU_num):
-        adj_list, pts_list = return_list[i]  # Each item is a list of tensors
+        adj_list, pts_list = return_list[i]  # Translated English comment.
         final_adj.extend(adj_list)  # flatten list
         final_pts.extend(pts_list)
 
@@ -511,7 +545,7 @@ def load_and_preprocess_batch(batch_idx, dataset):
 
 
     #Balanced_Kmeans By layers:
-    L1sG_count = int(args.L3_clusternum/args.L32L2_times/args.GPU_num)
+    L1sG_count = int(args.L3_clusternum/args.L32L2_times/args.L22L1_times)
     L1sG_label, L1sG_center = balanced_kmeans_mcmf_fast_v3(global_coord, L1sG_count)
     if args.if_plot_clusters:   plot_clusters(global_coord, L1sG_label, L1sG_center)
 
@@ -523,28 +557,51 @@ def load_and_preprocess_batch(batch_idx, dataset):
 
 
     #LKH solution For Layer1, but efficient for large subgraphs.
-    L1_tour = [0, 1]
+    # L1_tour = [0, 1]
 
-    L2_super_coords = build_coord_dict(
-        [global_coord[L3sG_label == i].mean(axis=0) for i in range(L2sG_count)], prefix="super" )
-    solver = elkai.Coordinates2D(L2_super_coords)
-    L2_tour = [int(node.split('_')[-1]) for node in solver.solve_tsp()[:-1]]
-    L3_tour = L2_tour
+    # L2_super_coords = build_coord_dict(
+    #     [global_coord[L3sG_label == i].mean(axis=0) for i in range(L2sG_count)], prefix="super" )
+    # solver = elkai.Coordinates2D(L2_super_coords)
+    # L2_tour = [int(node.split('_')[-1]) for node in solver.solve_tsp()[:-1]]
+    # L3_tour = L2_tour
 
-    # L2_tour = []
-    # for node_i in L3_tour:
-    #     for node_j in range(args.scale2_times):
-    #         L2_tour.append(node_i * args.scale2_times + node_j)
+    L1_super_coords = build_coord_dict(
+        [global_coord[L1sG_label == i].mean(axis=0) for i in range(L1sG_count)], prefix="super" )
+    solver = elkai.Coordinates2D(L1_super_coords)
+    L1_tour = [int(node.split('_')[-1]) for node in solver.solve_tsp()[:-1]]
 
-    # L3_tour = []
-    # for node_i in L2_tour:
-    #     for node_j in range(args.L32L2_times):
-    #         L3_tour.append(node_i * args.L32L2_times + node_j)
-    # print("LKH time", time.time() - starttime)
+    L2_tour = []
+    for node_i in L1_tour:
+        for node_j in range(args.L22L1_times):
+            L2_tour.append(node_i * args.L22L1_times + node_j)
 
-    L1_enhanced_data, L1_cluster_global_indices, L1_main_points =  process_clusters_wtour(L1_tour, L1sG_label, global_coord, redundancy_length = 0, bridge_length=0)
-    L2_enhanced_data, L2_cluster_global_indices, L2_main_points =  process_clusters_wtour(L2_tour, L2sG_label, global_coord, redundancy_length = 0, bridge_length=0)
-    L3_enhanced_data, L3_cluster_global_indices, L3_main_points =  process_clusters_wtour(L3_tour, L3sG_label, global_coord, redundancy_length = 0, bridge_length=0)
+    L3_tour = []
+    for node_i in L2_tour:
+        for node_j in range(args.L32L2_times):
+            L3_tour.append(node_i * args.L32L2_times + node_j)
+    print("LKH time", time.time() - starttime)
+
+    L1_enhanced_data, L1_cluster_global_indices, L1_main_points = process_clusters_wtour(
+        L1_tour,
+        L1sG_label,
+        global_coord,
+        redundancy_length=args.redundancy_length,
+        bridge_length=args.bridge_length,
+    )
+    L2_enhanced_data, L2_cluster_global_indices, L2_main_points = process_clusters_wtour(
+        L2_tour,
+        L2sG_label,
+        global_coord,
+        redundancy_length=args.redundancy_length,
+        bridge_length=args.bridge_length,
+    )
+    L3_enhanced_data, L3_cluster_global_indices, L3_main_points = process_clusters_wtour(
+        L3_tour,
+        L3sG_label,
+        global_coord,
+        redundancy_length=args.redundancy_length,
+        bridge_length=args.bridge_length,
+    )
     
     print(batch_idx, "-th Dividing Cost time", time.time() - starttime)
 
@@ -572,11 +629,11 @@ def decode_and_store_result(batch_idx, args, data, result):
     starttime = time.time()
     # global_tour_indices = process_test_end(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices2, main_points2)
     global_tour_indices = process_test_end_heatmap_4Sparse(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices3, main_points3, global_coord,
-                                                            test_2opt_iterations= args.two_opt_iterations, excute_num = args.decoexcute_num)
+                                                            test_2opt_iterations= args.two_opt_iterations, excute_num = args.decoexcute_num, epsilon=args.epsilon)
     print(batch_idx, '-th Decoding cost time:', time.time() - starttime)
 
 
-    append_array_to_list_dir('storage/temp_results/tour_solutions', global_tour_indices)
+    append_array_to_list_dir('storage/temp_results/' + args.temp_results_folder, global_tour_indices)
 
 
 def set_global_seed(seed: int):
@@ -586,6 +643,15 @@ def set_global_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def resolve_visible_gpu_num(single_gpu_only=False):
+    visible_gpu_num = torch.cuda.device_count()
+    if visible_gpu_num < 1:
+        raise RuntimeError("No visible CUDA device. Set CUDA_VISIBLE_DEVICES before running.")
+    if single_gpu_only:
+        return 1
+    return visible_gpu_num
 
 async def async_main(args, whole_dataset, ME3_list, ME2_list,  ME1_list):
     set_global_seed(args.random_seed)
@@ -605,8 +671,8 @@ async def async_main(args, whole_dataset, ME3_list, ME2_list,  ME1_list):
         for b in range(total):
             data = await loop.run_in_executor(loader_executor, load_and_preprocess_batch, b, whole_dataset[b])
             await q1.put((b, data))
-            # q1.maxsize=2 enforces backpressure when the pipeline window exceeds 2 (up to N+1 in flight)
-        await q1.put(None)  # End marker
+            # Translated English comment.
+        await q1.put(None)  # Translated English comment.
 
     async def gpu_worker():
         while True:
@@ -653,7 +719,7 @@ def main(args):
     L1ME_base = ModelEngine_L1(args, sparse=args.L1_sparse)
     L1ME_base.set_Model(args.L1_model_ckptpath)
 
-    # Clone one model copy per GPU
+    # Translated English comment.
     L3ME_list = [copy.deepcopy(L3ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L2ME_list = [copy.deepcopy(L2ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L1ME_list = [copy.deepcopy(L1ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
@@ -704,15 +770,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Solve Large Scale TSP with LKH")
 
     # Scale Parameters
-    parser.add_argument("--redundancy_length", type=int, default=3, help="Number of nodes to be added in one side of target subgraph")
-    parser.add_argument("--bridge_length", type=int, default=4, help="Number of nodes to be added for cycle")
-    parser.add_argument("--L3_clusternum", type=int, default=4, help="Number of clustered subgraphs") #200/40
+    parser.add_argument("--redundancy_length", type=int, default=8, help="Number of nodes to be added in one side of target subgraph")
+    parser.add_argument("--bridge_length", type=int, default=14, help="Number of nodes to be added for cycle")
+    parser.add_argument("--L3_clusternum", type=int, default=4, help="Number of Divide-and-conquer subgraphs(recommendation for 4 for 10000, around 5G in one local diffusion)") #
     parser.add_argument('--L3_batchsize', type=int, default=1)
     parser.add_argument('--L2_batchsize', type=int, default=1)
     parser.add_argument('--L1_batchsize', type=int, default=1)
     parser.add_argument("--L32L2_times", type=int, default=1)
-    parser.add_argument("--L22L1_times", type=int, default=2)
-    parser.add_argument('--GPU_num', type=int, default=2)
+    parser.add_argument("--L22L1_times", type=int, default=1)
+    parser.add_argument('--GPU_num', type=int, default=None, help="Deprecated: ignored. GPU count is auto-detected from visible CUDA devices.")
     parser.add_argument("--pre_prop", type=int, default=0.8)
     parser.add_argument("--noise_prop", type=int, default=0.03)
     parser.add_argument('--multiscale', default=True)
@@ -752,8 +818,8 @@ if __name__ == "__main__":
     parser.add_argument("--if_plot_subgraph", default=True, action="store_true", help="Plot the cluster subgraph tour")
     parser.add_argument("--if_plot_global", default=True, action="store_true", help="Plot the global TSP tour")
     #Paths regarding data and figure storage
-    parser.add_argument("--logfile_path", type=str, default="./storage/logs/tsp_large_LKH_87.log", help="Path to the log file")
-    parser.add_argument("--temp_results_folder", type=str, default="tour_solutions", help="Path to the temp solution file")
+    parser.add_argument("--logfile_path", type=str, default="./storage/logs/HiDiff_sinGPU.log", help="Path to the log file")
+    parser.add_argument("--temp_results_folder", type=str, default="1000_tour_solutions", help="Path to the temp solution file")
     parser.add_argument("--debug", default=False, action="store_true", help="Debug mode")
     #figure storage is not added because it is not used in the main function
     parser.add_argument("--data_path", type=str, default="./storage/data/tsp/tsp1000_test_concorde.txt", help="Path to the TSP dataset")
@@ -761,11 +827,16 @@ if __name__ == "__main__":
     #Parallel
     # parser.add_argument('--Asynch_time', type=int, default=4)
     parser.add_argument('--GT_had', action='store_true')
-    parser.add_argument('--loadexcute_num', type=int, default=8)
-    parser.add_argument('--decoexcute_num', type=int, default=24)
+    parser.add_argument('--loadexcute_num', type=int, default=12)
+    parser.add_argument('--decoexcute_num', type=int, default=32)
+    parser.add_argument('--epsilon', type=float, default=1e-2, help='Stability epsilon used in sparse heatmap decoding.')
 
-    # Parse arguments
+    # Translated English comment.
     args = parser.parse_args()
+    auto_gpu_num = resolve_visible_gpu_num(single_gpu_only=False)
+    if args.GPU_num is not None and args.GPU_num != auto_gpu_num:
+        print(f"[Info] Ignore --GPU_num={args.GPU_num}; using auto-detected value {auto_gpu_num}.")
+    args.GPU_num = auto_gpu_num
 
-    # Call the main function
+    # Translated English comment.
     main(args)

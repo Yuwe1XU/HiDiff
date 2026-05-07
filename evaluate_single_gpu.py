@@ -6,6 +6,7 @@ import numpy as np
 import argparse
 import logging, time
 from tqdm import tqdm as tqdm_orig
+import torch.multiprocessing as mp
 import threading
 import copy
 import asyncio
@@ -110,7 +111,8 @@ class ModelEngine_L1(COMetaModel):
 
             if noise_prop != 1:
                 if B%sG2_times != 0: "the batch size should times of multiscale"
-                scale2_main, scale2_extend = scale1_main*sG2_times, scale1_main*sG2_times + 30
+                scale2_main = scale1_main * sG2_times
+                scale2_extend = scale2_main + (self.args.redundancy_length * 2 + self.args.bridge_length)
 
                 intra_noise_prop = noise_prop
                 inter_noise_prop = noise_prop*0.8
@@ -135,7 +137,15 @@ class ModelEngine_L1(COMetaModel):
             xt_1 = torch.stack(xt_1_list, dim=0)
             xt_1 = xt_1[:, :scale1_main, :scale1_main]
             xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-            xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+            xt_groups = xt2large_noise(
+                groups,
+                xt_grouped,
+                [sG2_times, scale2_main, scale2_extend],
+                intra_noise_prop,
+                inter_noise_prop,
+                redundancy_length=self.args.redundancy_length,
+                bridge_length=self.args.bridge_length,
+            )
             # xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
             xt_2_list = torch.stack(xt_groups, dim=0).unsqueeze(1).cuda(device=device)
         else:
@@ -143,7 +153,15 @@ class ModelEngine_L1(COMetaModel):
             xt_1 = torch.cat(xt_1_list, dim=0)
             xt_1 = xt_1[:, :scale1_main, :scale1_main]
             xt_grouped = xt_1.view(groups, sG2_times, scale1_main, scale1_main)
-            xt_groups = xt2large_noise(groups, xt_grouped, [sG2_times, scale2_main, scale2_extend,],intra_noise_prop, inter_noise_prop) 
+            xt_groups = xt2large_noise(
+                groups,
+                xt_grouped,
+                [sG2_times, scale2_main, scale2_extend],
+                intra_noise_prop,
+                inter_noise_prop,
+                redundancy_length=self.args.redundancy_length,
+                bridge_length=self.args.bridge_length,
+            )
             xt_2_list.append(torch.stack(xt_groups, dim=0).cuda(device=device))
 
         
@@ -179,7 +197,7 @@ class ModelEngine_L1(COMetaModel):
         
         xt_grouped = xt_1.view(1, len(xt), scale1_main, scale1_main)
 
-        # Build a block-diagonal matrix from 5 subgraphs (250x250)
+        # Translated English comment.
         block_diag = torch.block_diag(*[xt_grouped[0, k] for k in range(self.args.GPU_num)])
         xt = torch.stack([block_diag], dim=0).cuda(device=device)
         
@@ -260,7 +278,7 @@ def range_preserving_rescale_matrices(matrices, min_val=1e-4, max_val=1.0):
     return [transform(m) for m in matrices]
 
 def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, cluster_global_indices, main_points, merge_points, 
-                             merge_thr = 1000, parallel_sampling = 1, test_2opt_iterations =1000, sparser = False, excute_num=8):
+                             merge_thr = 1000, parallel_sampling = 1, test_2opt_iterations =1000, sparser = False, excute_num=8, epsilon=1e-5):
     small_adjs, all_points, offset, cluster_map = [], [], 0, []
     base_scale = len(main_points[0])
     subgraph_num = len(cluster_global_indices) 
@@ -275,8 +293,8 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
 
             # cutting
             src_all, dst_all = edge_index
-            mask = (src_all < base_scale) & (dst_all < base_scale)  # Tensor-based filtering for efficiency
-            edge_index_sub = edge_index[:, mask]  # Filtered edges, shape [2, E_sub]
+            mask = (src_all < base_scale) & (dst_all < base_scale)  # Translated English comment.
+            edge_index_sub = edge_index[:, mask]  # Translated English comment.
             xt_sub_selected = xt_sub[mask] 
 
             small_adj = torch.sparse_coo_tensor(
@@ -295,7 +313,7 @@ def process_test_end_heatmap_4Sparse(xt, edge_index_list, sequential_sampling, c
         small_adjs = range_preserving_rescale_matrices(small_adjs, min_val=1e-4, max_val=1.0)
 
         big_size = subgraph_num * base_scale
-        big_adj  = np.zeros((big_size, big_size), dtype=small_adjs[0].dtype)  + 1e-5  #So far with original adding and 1500 mergethreshold may have a good performance
+        big_adj  = np.zeros((big_size, big_size), dtype=small_adjs[0].dtype)  + epsilon  #So far with original adding and 1500 mergethreshold may have a good performance
         for g, mat in enumerate(small_adjs):
             s = g * base_scale
             big_adj[s:s+base_scale, s:s+base_scale] = mat
@@ -422,8 +440,20 @@ def load_and_preprocess_batch(batch_idx, dataset):
     # print("LKH time", time.time() - starttime)
 
     L1_enhanced_data, L1_cluster_global_indices, L1_main_points =  process_clusters_wotour(L1_tour, L1sG_label, global_coord)
-    L2_enhanced_data, L2_cluster_global_indices, L2_main_points =  process_clusters_wtour(L2_tour, L2sG_label, global_coord, redundancy_length = 8, bridge_length=14)
-    L3_enhanced_data, L3_cluster_global_indices, L3_main_points =  process_clusters_wtour(L3_tour, L3sG_label, global_coord, redundancy_length = 8, bridge_length=14)
+    L2_enhanced_data, L2_cluster_global_indices, L2_main_points = process_clusters_wtour(
+        L2_tour,
+        L2sG_label,
+        global_coord,
+        redundancy_length=args.redundancy_length,
+        bridge_length=args.bridge_length,
+    )
+    L3_enhanced_data, L3_cluster_global_indices, L3_main_points = process_clusters_wtour(
+        L3_tour,
+        L3sG_label,
+        global_coord,
+        redundancy_length=args.redundancy_length,
+        bridge_length=args.bridge_length,
+    )
     
     print(f"{batch_idx}--th Dividing Cost time {time.time() - starttime}")
     
@@ -454,7 +484,7 @@ def decode_and_store_result(batch_idx, args, data, result):
     starttime = time.time()
     # global_tour_indices = process_test_end(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices2, main_points2)
     global_tour_indices, _ = process_test_end_heatmap_4Sparse(solution_adjmatrix, solution_points, args.sequential_sampling, cluster_global_indices3, main_points3, global_coord, 
-                                                            test_2opt_iterations= args.two_opt_iterations, excute_num = args.decoexcute_num)
+                                                            test_2opt_iterations= args.two_opt_iterations, excute_num = args.decoexcute_num, epsilon=args.epsilon)
     print(f"{batch_idx}--th Decoding Cost time {time.time() - starttime}")
 
     # total_cost = compute_tour_cost(global_coord, np.array(global_tour_indices))
@@ -477,6 +507,15 @@ def set_global_seed(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
+def resolve_visible_gpu_num(single_gpu_only=False):
+    visible_gpu_num = torch.cuda.device_count()
+    if visible_gpu_num < 1:
+        raise RuntimeError("No visible CUDA device. Set CUDA_VISIBLE_DEVICES before running.")
+    if single_gpu_only:
+        return 1
+    return visible_gpu_num
+
 async def async_main(args, whole_dataset, ME3_list, ME2_list, ME1_list):
     set_global_seed(args.random_seed)
     total = len(whole_dataset)
@@ -495,8 +534,8 @@ async def async_main(args, whole_dataset, ME3_list, ME2_list, ME1_list):
         for b in range(total):
             data = await loop.run_in_executor(loader_executor, load_and_preprocess_batch, b, whole_dataset[b])
             await q1.put((b, data))
-            # q1.maxsize=2 enforces backpressure when the pipeline window exceeds 2 (up to N+1 in flight)
-        await q1.put(None)  # End marker
+            # Translated English comment.
+        await q1.put(None)  # Translated English comment.
 
     # Stage 2: GPU (Diffuse)
     async def gpu_worker():
@@ -543,7 +582,7 @@ def main(args):
     L1ME_base = ModelEngine_L1(args, sparse=args.L1_sparse)
     L1ME_base.set_Model(args.L1_model_ckptpath)
 
-    # Clone one model copy per GPU
+    # Translated English comment.
     L3ME_list = [copy.deepcopy(L3ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L2ME_list = [copy.deepcopy(L2ME_base).to(f'cuda:{i}') for i in range(args.GPU_num)]
     L1ME_list = [L1ME_base]
@@ -580,8 +619,8 @@ def main(args):
             idx += 1
             
             L3sG_label, L3sG_center = balanced_kmeans_mcmf_fast_v3(global_coord, 1)
-            plot_global(global_coord, L3sG_label, np.array(solved_tour_indices),  L3sG_center, save_path='./figures/global_tsp_result_diff_3.png')
-            # time.sleep(5)
+            if args.if_plot_global:
+                plot_global(global_coord, L3sG_label, np.array(solved_tour_indices),  L3sG_center, save_path='./storage/figures/global_tsp_result_diff_3.png')
 
     if args.GT_had: 
         logging.info(f"Average gap for {len(whole_dataset)} is {(avg_gap/len(whole_dataset)):.3f}%")
@@ -594,8 +633,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Solve Large Scale TSP with LKH")
 
     # Scale Parameters
-    parser.add_argument("--redundancy_length", type=int, default=3, help="Number of nodes to be added in one side of target subgraph")
-    parser.add_argument("--bridge_length", type=int, default=4, help="Number of nodes to be added for cycle")
+    parser.add_argument("--redundancy_length", type=int, default=8, help="Number of nodes to be added in one side of target subgraph")
+    parser.add_argument("--bridge_length", type=int, default=14, help="Number of nodes to be added for cycle")
     parser.add_argument("--L3_clusternum", type=int, default=4, help="Number of clustered subgraphs") #200/40
     parser.add_argument('--L3_batchsize', type=int, default=1)
     parser.add_argument('--L2_batchsize', type=int, default=1)
@@ -614,9 +653,9 @@ if __name__ == "__main__":
     parser.add_argument("--L2_sparse", type=int, default=60)
     parser.add_argument("--L1_model_ckptpath", type=str, default="storage/ckpt/epoch_32.ckpt", help="Path to the checkpoint")
     parser.add_argument("--L1_sparse", type=int, default=100)
-    # parser.add_argument("--multiscale_prop", type=str, default='[0,0.1,0.3,1]', help="Path to the checkpoint")
-    parser.add_argument("--multiscale_prop1", type=float, default=0.1, help="Path to the checkpoint")
-    parser.add_argument("--multiscale_prop2", type=float, default=0.3, help="Path to the checkpoint")
+    # parser.add_argument("--multiscale_prop", type=str, default='[0,0.6,0.8,1]', help="Path to the checkpoint")
+    parser.add_argument("--multiscale_prop1", type=float, default=0.5, help="Path to the checkpoint")
+    parser.add_argument("--multiscale_prop2", type=float, default=0.7, help="Path to the checkpoint")
     
     parser.add_argument('--diffusion_type', type=str, default='categorical')
     parser.add_argument('--diffusion_schedule', type=str, default='cosine')
@@ -637,24 +676,29 @@ if __name__ == "__main__":
 
     # Plotting Parameters
     parser.add_argument("--if_plot_clusters", default=False, action="store_true", help="Plot the clustered points")
-    parser.add_argument("--if_plot_subgraph", default=True, action="store_true", help="Plot the cluster subgraph tour")
-    parser.add_argument("--if_plot_global", default=True, action="store_true", help="Plot the global TSP tour")
+    parser.add_argument("--if_plot_subgraph", default=False, action="store_true", help="Plot the cluster subgraph tour")
+    parser.add_argument("--if_plot_global", default=False, action="store_true", help="Plot the global TSP tour")
     #Paths regarding data and figure storage
-    parser.add_argument("--logfile_path", type=str, default="./storage/logs/tsp_large_LKH_87.log", help="Path to the log file")
-    parser.add_argument("--temp_results_folder", type=str, default="10000_tour_solutions", help="Path to the temp solution file")
+    parser.add_argument("--logfile_path", type=str, default="./storage/logs/HiDiff_sinGPU.log", help="Path to the log file")
+    parser.add_argument("--temp_results_folder", type=str, default="1000_tour_solutions", help="Path to the temp solution file")
     parser.add_argument("--debug", default=False, action="store_true", help="Debug mode")
     #figure storage is not added because it is not used in the main function
     parser.add_argument("--data_path", type=str, default="./storage/data/tsp/tsp1000_test_concorde.txt", help="Path to the TSP dataset")
 
     #Parallel
     # parser.add_argument('--Asynch_time', type=int, default=4)
-    parser.add_argument('--GPU_num', type=int, default=1)
+    parser.add_argument('--GPU_num', type=int, default=None, help="Deprecated: ignored. GPU count is auto-detected from visible CUDA devices.")
     parser.add_argument('--GT_had', action='store_true')
     parser.add_argument('--loadexcute_num', type=int, default=8)
     parser.add_argument('--decoexcute_num', type=int, default=24)
+    parser.add_argument('--epsilon', type=float, default=1e-5, help='Stability epsilon used in sparse heatmap decoding.')
 
-    # Parse arguments
+    # Translated English comment.
     args = parser.parse_args()
+    auto_gpu_num = resolve_visible_gpu_num(single_gpu_only=True)
+    if args.GPU_num is not None and args.GPU_num != auto_gpu_num:
+        print(f"[Info] Ignore --GPU_num={args.GPU_num}; using auto-detected value {auto_gpu_num}.")
+    args.GPU_num = auto_gpu_num
 
-    # Call the main function
+    # Translated English comment.
     main(args)

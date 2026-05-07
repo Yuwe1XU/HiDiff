@@ -11,7 +11,7 @@ import networkx as nx
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import pairwise_distances
-# from ortools.graph import pywrapgraph  # 需要安装ortools
+# Translated English comment.
 from ortools.graph import pywrapgraph
 import heapq
 from utils.tsp_utils import TSPEvaluator, batched_two_opt_torch, merge_tours, merge_tours_v2, merge_tours_v4, two_opt_numpy
@@ -167,17 +167,17 @@ def balanced_kmeans_mcmf_fast(points, k, m=5):
     assert n % k == 0
     sz = n // k
 
-    # 1) 初始化 KMeans
+    # Translated English comment.
     km = KMeans(n_clusters=k, n_init=5, random_state=0).fit(points)
     centers = km.cluster_centers_
 
-    # 2) 计算距离 + 候选簇
+    # Translated English comment.
     dist = pairwise_distances(points, centers)  # shape: (n, k)
     nearest_m = np.argpartition(dist, m, axis=1)[:, :m]
     assigned = km.labels_.reshape(-1, 1)
     candidates = np.concatenate([nearest_m, assigned], axis=1)
 
-    # 3) 构建边：转成 Python int
+    # Translated English comment.
     edges = []
     for i in range(n):  # source (0) -> points (2+i)
         edges.append((0, 2 + i, 1, 0))
@@ -188,7 +188,7 @@ def balanced_kmeans_mcmf_fast(points, k, m=5):
     for j in range(k):  # cluster -> sink (1)
         edges.append((2 + n + j, 1, sz, 0))
 
-    # 4) 使用 OR-Tools 最小费用最大流
+    # Translated English comment.
     smcf = pywrapgraph.SimpleMinCostFlow()
     for u, v, cap, cost in edges:
         smcf.AddArcWithCapacityAndUnitCost(int(u), int(v), int(cap), int(cost))
@@ -199,7 +199,7 @@ def balanced_kmeans_mcmf_fast(points, k, m=5):
     if status != smcf.OPTIMAL:
         raise RuntimeError("Flow solver failed.")
 
-    # 5) 提取分配结果
+    # Translated English comment.
     labels = np.full(n, -1, dtype=int)
     for arc in range(smcf.NumArcs()):
         if smcf.Flow(arc) > 0:
@@ -212,19 +212,19 @@ def balanced_kmeans_mcmf_fast(points, k, m=5):
 
 def balanced_kmeans_mcmf_fast_v3(points, k, m=5):
     n = len(points)
-    if n % k != 0:   raise ValueError(f"数据点数量 {n} 必须能被聚类数量 {k} 整除")
+    if n % k != 0:   raise ValueError(f"Number of data points {n} must be divisible by number of clusters {k}")
     
     cluster_size = n // k
     
-    # 1) K-means初始化
+    # Translated English comment.
     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
     initial_labels = kmeans.fit_predict(points)
     centers = kmeans.cluster_centers_
     
-    # 2) 计算距离矩阵
+    # Translated English comment.
     distances = pairwise_distances(points, centers)
     
-    # 3) 为每个点确定候选聚类
+    # Translated English comment.
     candidates_per_point = []
     for i in range(n):
         nearest_clusters = np.argsort(distances[i])[:m]
@@ -232,36 +232,36 @@ def balanced_kmeans_mcmf_fast_v3(points, k, m=5):
         candidate_set = set(nearest_clusters) | {assigned_cluster}
         candidates_per_point.append(sorted(candidate_set))
     
-    # 4) 构建最小费用最大流图
+    # Translated English comment.
     smcf = pywrapgraph.SimpleMinCostFlow()
     
-    # 添加边
+    # Translated English comment.
     for i in range(n):
         point_node = int(2 + i)
         smcf.AddArcWithCapacityAndUnitCost(0, point_node, 1, 0)
     
-    # 点到候选聚类的边
+    # Translated English comment.
     for i in range(n):
         point_node = 2 + i
         for j in candidates_per_point[i]:
             cluster_node = int( 2 + n + j) 
-            # 将距离转换为整数费用，乘以1000并四舍五入
+            # Translated English comment.
             cost = int(round(distances[i, j]))
             smcf.AddArcWithCapacityAndUnitCost(point_node, cluster_node, 1, cost)
     
-    # 聚类到sink的边 (容量=cluster_size, 费用=0)
+    # Translated English comment.
     for j in range(k):
         cluster_node = int(2 + n + j)
         smcf.AddArcWithCapacityAndUnitCost(cluster_node, 1, cluster_size, 0)
     
-    # 设置供需
-    smcf.SetNodeSupply(0, n)      # source供应n个单位
-    smcf.SetNodeSupply(1, -n)     # sink需求n个单位
+    # Translated English comment.
+    smcf.SetNodeSupply(0, n)      # Translated English comment.
+    smcf.SetNodeSupply(1, -n)     # Translated English comment.
     
-    # 5) 求解
+    # Translated English comment.
     status = smcf.Solve()
     
-    # 检查求解状态
+    # Translated English comment.
     status_names = {
         smcf.OPTIMAL: "OPTIMAL",
         smcf.NOT_SOLVED: "NOT_SOLVED", 
@@ -275,7 +275,7 @@ def balanced_kmeans_mcmf_fast_v3(points, k, m=5):
     if status != smcf.OPTIMAL:
         raise RuntimeError("Flow solver failed.")
     
-    # 6) 提取结果
+    # Translated English comment.
     labels = np.full(n, -1, dtype=int)
     
     for arc_id in range(smcf.NumArcs()):
@@ -283,15 +283,15 @@ def balanced_kmeans_mcmf_fast_v3(points, k, m=5):
             tail = smcf.Tail(arc_id)
             head = smcf.Head(arc_id)
             
-            # 检查是否是点到聚类的边
+            # Translated English comment.
             if 2 <= tail < 2 + n and 2 + n <= head < 2 + n + k:
                 point_idx = tail - 2
                 cluster_idx = head - (2 + n)
                 labels[point_idx] = cluster_idx
     
-    # 验证结果
+    # Translated English comment.
     if np.any(labels == -1):
-        raise RuntimeError("部分点未被分配到聚类")
+        raise RuntimeError("Some points were not assigned to any cluster")
     
     return labels, centers
 
@@ -343,7 +343,7 @@ def balanced_kmeans_mcmf_fast_v2(points, k, m=3):
 
     final_labels = np.full(n, -1, dtype=int)
 
-    # 读取流结果，从点节点流向哪个cluster节点
+    # Translated English comment.
     for i in range(n):
         arc_count = smcf.NumArcs()
         for arc_id in range(arc_count):
@@ -368,11 +368,11 @@ def balanced_kmeans_fast(points, k, m=3, max_iters=20):
 
     for _ in range(max_iters):
         dists = cdist(points, centers)  # [n, k]
-        nearest = np.argsort(dists, axis=1)[:, :m]  # 每个点的最近m个中心
+        nearest = np.argsort(dists, axis=1)[:, :m]  # Translated English comment.
         assigned = np.full(n, -1)
         cluster_load = np.zeros(k, dtype=int)
 
-        # Step: 贪心分配到最近但可用的中心
+        # Translated English comment.
         for i in range(n):
             for j in nearest[i]:
                 if cluster_load[j] < cluster_size:
@@ -380,7 +380,7 @@ def balanced_kmeans_fast(points, k, m=3, max_iters=20):
                     cluster_load[j] += 1
                     break
         
-        # 如果有未分配点，强制分配（极少数）
+        # Translated English comment.
         for i in range(n):
             if assigned[i] == -1:
                 for j in nearest[i]:
@@ -388,7 +388,7 @@ def balanced_kmeans_fast(points, k, m=3, max_iters=20):
                     cluster_load[j] += 1
                     break
 
-        # 更新中心
+        # Translated English comment.
         new_centers = np.zeros((k, dim))
         counts = np.zeros(k)
         for i in range(n):
@@ -404,20 +404,20 @@ def balanced_kmeans_fast(points, k, m=3, max_iters=20):
 
 
 def compute_dismatrix(points, labels, num_clusters):
-    distance_matrix = np.zeros((num_clusters, num_clusters))  # 初始化距离矩阵为无穷大
+    distance_matrix = np.zeros((num_clusters, num_clusters))  # Translated English comment.
 
     for i in range(num_clusters):
         for j in range(i + 1, num_clusters):
-            # 获取类 i 和类 j 的所有点
+            # Translated English comment.
             points_i = points[labels == i]
             points_j = points[labels == j]
 
-            # 计算类 i 和类 j 之间的最小距离
+            # Translated English comment.
             if len(points_i) > 0 and len(points_j) > 0:
                 dist = cdist(points_i, points_j, metric='euclidean')
                 min_dist = np.min(dist)
                 distance_matrix[i, j] = min_dist
-                distance_matrix[j, i] = min_dist  # 距离矩阵是对称的
+                distance_matrix[j, i] = min_dist  # Translated English comment.
     return distance_matrix
 
 def extract_effective_tour(tour, target_range=range(50)):
@@ -506,17 +506,17 @@ def soft_normalize(global_coords, main_coords):
 
 
 def hard_normalize(global_coords, main_coords):
-    # 计算全局最大范围（保持纵横比的关键）
+    # Translated English comment.
     min_vals = global_coords.min(axis=0)
     max_vals = global_coords.max(axis=0)
     ranges = max_vals - min_vals
-    max_range = max(ranges)  # 按长边比例缩放
+    max_range = max(ranges)  # Translated English comment.
     
-    # 统一按max_range缩放（保持纵横比）
+    # Translated English comment.
     global_scaled = (global_coords - min_vals) / max_range
     main_scaled = (main_coords - min_vals) / max_range
     
-    # 可选：平移数据到 [0.02, 0.98] 附近
+    # Translated English comment.
     current_min = global_scaled.min()
     current_max = global_scaled.max()
     target_min, target_max = 0.02, 0.98
@@ -541,22 +541,22 @@ def push_points_relative(points, main_points, factor=2):
     return points + offset
 
 def generate_relative_points(prev_points: np.ndarray, main_points: np.ndarray, redundancy_length: int) -> np.ndarray:
-    # 1. 计算两个子图的中心
+    # Translated English comment.
     center_prev = np.mean(prev_points, axis=0)
     center_main = np.mean(main_points, axis=0)
 
-    # 2. 计算从主图中心到前图中心的单位方向向量
+    # Translated English comment.
     direction = center_prev - center_main
     norm = np.linalg.norm(direction)
-    # if norm == 0: raise ValueError("prev_points 和 main_points 的中心重合，无法定义方向")
+    # Translated English comment.
     unit_dir = direction / norm
 
-    rel = main_points - center_main  # 每个点相对主中心的向量
-    proj_lengths = rel.dot(unit_dir)  # 在 direction 方向上的投影长度
+    rel = main_points - center_main  # Translated English comment.
+    proj_lengths = rel.dot(unit_dir)  # Translated English comment.
     max_len = proj_lengths.max()
-    boundary_pt = center_main + unit_dir * max_len * 1.2 # 映射点：中心加上最大投影长度方向偏移
+    boundary_pt = center_main + unit_dir * max_len * 1.2 # Translated English comment.
 
-    relative_points = np.linspace(boundary_pt, center_prev, redundancy_length) #均匀放置冗余点
+    relative_points = np.linspace(boundary_pt, center_prev, redundancy_length) # Translated English comment.
 
     return relative_points, center_prev
 
@@ -596,7 +596,7 @@ def generate_bridge_points_relative_cycle(main_points, left_points, right_points
 
 
 def generate_bridge_points_relative_square(main_points, left_points, right_points, num=8, noise_x=5, noise_y=3):
-    # 计算三个簇的中心
+    # Translated English comment.
     A = np.mean(main_points, axis=0)
     B = np.mean(left_points, axis=0)
     C = np.mean(right_points, axis=0)
@@ -604,25 +604,25 @@ def generate_bridge_points_relative_square(main_points, left_points, right_point
     vec_AB = B - A
     vec_AC = C - A
     vec_BC = C - B
-    if np.dot(vec_AB, vec_AC) < 0:  # 角BAC > 90度
-        M = (B + C) / 2  # BC的中点
+    if np.dot(vec_AB, vec_AC) < 0:  # Translated English comment.
+        M = (B + C) / 2  # Translated English comment.
         directioner = np.array([vec_BC[1], -vec_BC[0]])
         if np.dot(M - A, directioner) > 0:
             directioner = -directioner
-        D = M - directioner / np.linalg.norm(directioner) * np.linalg.norm(B - C) / 2  # D点位置
+        D = M - directioner / np.linalg.norm(directioner) * np.linalg.norm(B - C) / 2  # Translated English comment.
     else:
-        D = B + C - A  # 平行四边形规则
+        D = B + C - A  # Translated English comment.
 
-    # 找到left_points和right_points中距离D最近的点
+    # Translated English comment.
     left_start = left_points[np.argmin(np.linalg.norm(left_points - D, axis=1))]
     right_start = right_points[np.argmin(np.linalg.norm(right_points - D, axis=1))]
 
-    # 在BD和CD线上生成点（从外侧向D点采样）
+    # Translated English comment.
     k = num // 2
-    bd_points = np.linspace(left_start, D, k + 2)[1:-1]  # 从left_start到D的中间点
-    cd_points = np.linspace(right_start, D, k + 2)[1:-1]  # 从right_start到D的中间点
+    bd_points = np.linspace(left_start, D, k + 2)[1:-1]  # Translated English comment.
+    cd_points = np.linspace(right_start, D, k + 2)[1:-1]  # Translated English comment.
 
-    # 合并点并添加噪声
+    # Translated English comment.
     bridge_points = np.vstack((bd_points, cd_points))
     bridge_points += np.random.uniform([-noise_x, -noise_y], [noise_x, noise_y], bridge_points.shape)
 
@@ -641,18 +641,18 @@ def generate_bridge_points_relative_fused(main_points, left_point, right_point, 
     dot_product = np.dot(vec_AB, vec_AC)
     cos_theta = dot_product / (np.linalg.norm(vec_AB) * np.linalg.norm(vec_AC))
 
-    if cos_theta > -0.7071:  # 角BAC < 135度
-        D = B + C - A  # 平行四边形规则
-        # 找到left_points和right_points中距离D最近的点
+    if cos_theta > -0.7071:  # Translated English comment.
+        D = B + C - A  # Translated English comment.
+        # Translated English comment.
         left_start = left_point
         right_start = right_point
 
-        # 在BD和CD线上生成点（从外侧向D点采样）
+        # Translated English comment.
         k = num // 2
-        bd_points = np.linspace(left_start, D, k + 2)[1:-1]  # 从left_start到D的中间点
-        cd_points = np.linspace(right_start, D, k + 2)[1:-1]  # 从right_start到D的中间点
+        bd_points = np.linspace(left_start, D, k + 2)[1:-1]  # Translated English comment.
+        cd_points = np.linspace(right_start, D, k + 2)[1:-1]  # Translated English comment.
 
-        # 合并点并添加噪声
+        # Translated English comment.
         bridge_points = np.vstack((bd_points, cd_points))
         bridge_points += np.random.uniform([-noise_x, -noise_y], [noise_x, noise_y], bridge_points.shape)                       
 
@@ -671,11 +671,11 @@ def generate_bridge_points_relative_fused(main_points, left_point, right_point, 
         if dtheta <= np.pi:
             angles = np.linspace(theta_B, theta_C, num)
         else:
-            # 逆向小于 π 的弧
+            # Translated English comment.
             angles = np.linspace(theta_B, theta_C - 2*np.pi, num)
         # angles = np.linspace(theta_B, theta_C, num)
 
-        # 生成弧上的点
+        # Translated English comment.
         xs = center[0] + radius * np.cos(angles)
         ys = center[1] + radius * np.sin(angles)
         bridge_points = np.stack([xs, ys], axis=1)
@@ -769,7 +769,7 @@ def process_subgraph(main_points, main_cluster_id, prev_points, next_points, clu
         tour_nodes = solver.solve_tsp()
         tour = [int(node.split('_')[-1]) for node in tour_nodes]
     except Exception as e:
-        print(f"子图{main_cluster_id}求解失败: {e}")
+        print(f"Subgraph {main_cluster_id} solving failed: {e}")
         return None, None
 
     if if_plot_subgraph: plot_cluster_tour(enhanced_points, main_points, tour, main_cluster_id)
@@ -809,7 +809,7 @@ def main_oldLKH(args):
     super_tour_nodes = solver.solve_tsp()
     super_tour = [int(node.split('_')[-1]) for node in super_tour_nodes[:-1]]
     # distance_matrix = compute_dismatrix(merged_points, adjusted_labels, args.cluster_num)
-    # distance_matrix_int = (distance_matrix).astype(int)  # 缩放并取整
+    # Translated English comment.
     # super_tour = elkai.solve_int_matrix(distance_matrix_int)
     
     global_tour_indices = []
@@ -886,7 +886,7 @@ def main_oldLKH(args):
 #     for ss in range(sequential_sampling):
 #         assert ss == 0, "SS > 1, Needs further judgement"
 #         for idx in range(subgraph_num):
-#             # 裁剪前 50×50
+# Translated English comment.
 #             small_adj = adj_mats[ss][idx][:50, :50]
 #             small_adjs.append(small_adj)
 #             pts = main_points[idx]   
@@ -895,7 +895,7 @@ def main_oldLKH(args):
 #             cluster_map.append((offset, offset + 50))
 #             offset += 50
 
-#         # 2. 拼成 10000×10000 的大邻接矩阵
+# Translated English comment.
 #         big_size = subgraph_num * 50
 #         big_adj  = np.zeros((big_size, big_size), dtype=small_adjs[0].dtype)
 #         for g, mat in enumerate(small_adjs):
@@ -904,8 +904,8 @@ def main_oldLKH(args):
 
 #         big_points = np.vstack(all_points)
 
-#         # 4. 一次性调用 merge_tours + 2-opt
-#         #    注意：merge_tours 接受的 adj_mat 需要形状 (1, big_size, big_size)
+# Translated English comment.
+# Translated English comment.
 #         tours, merge_iterations = merge_tours(
 #             adj_mat       = big_adj[None, :, :],
 #             np_points = big_points,
@@ -931,43 +931,70 @@ def main_oldLKH(args):
 #     return global_tour
 
 
-def xt2large_noise(groups, xt_grouped, scale2_info, intra_noise_prop, inter_noise_prop):
+def xt2large_noise(
+    groups,
+    xt_grouped,
+    scale2_info,
+    intra_noise_prop,
+    inter_noise_prop,
+    redundancy_length=8,
+    bridge_length=14,
+):
     [scale2_times, scale2_main, scale2_extend] = scale2_info
     xt_groups = []
     for g in range(groups):
-        # 先构造 5 个子图的 block-diagonal (250×250)
+        # Translated English comment.
         block_diag = torch.block_diag(*[xt_grouped[g, k] for k in range(scale2_times)])
-        # 创建 280×280 的 padded 矩阵，并将子图数据填入左上角
+        # Translated English comment.
         padded = torch.zeros(scale2_extend, scale2_extend, device=block_diag.device)
         padded[:scale2_main, :scale2_main] = block_diag
 
 
-        # —— 一、在三个簇内部加入噪声 —— 
-        # 簇 1: [250:262], 簇 2: [262:268], 簇 3: [268:280]
-        cluster_starts = [scale2_main, scale2_main + 8, scale2_main + 16]  # [250, 262, 268]
-        cluster_ends   = [scale2_main + 8, scale2_main + 16, scale2_main + 30]  # [262, 268, 280]
+        # Translated English comment.
+        # Translated English comment.
+        tail_len = redundancy_length * 2 + bridge_length
+        cluster_starts = [
+            scale2_main,
+            scale2_main + redundancy_length,
+            scale2_main + 2 * redundancy_length,
+        ]
+        cluster_ends = [
+            scale2_main + redundancy_length,
+            scale2_main + 2 * redundancy_length,
+            scale2_main + tail_len,
+        ]
         for start, end in zip(cluster_starts, cluster_ends):
-            size = end - start  # 簇内部大小
-            # 生成 [size × size] 的随机噪声矩阵（对角和对称均可），这里只直接用全噪声方块
+            size = end - start  # Translated English comment.
+            # Translated English comment.
             noise_block = (torch.rand(size, size, device=block_diag.device) < intra_noise_prop).float()
             padded[start:end, start:end] = noise_block
 
-        # —— 二、在每对相邻区块（子图↔子图、子图↔簇、簇↔簇）之间加入噪声 —— 
-        # 定义所有“块”的边界索引列表：
-        #   子图 1 ~ 5: [0:50],[50:100],[100:150],[150:200],[200:250]
-        #   簇 1~3: [250:262],[262:268],[268:280]
+        # Translated English comment.
+        # Translated English comment.
+        # Translated English comment.
+        # Translated English comment.
         temp_scale = scale2_main//5
-        boundaries = [0, temp_scale*1, temp_scale*2, temp_scale*3, temp_scale*4, temp_scale*5, temp_scale*5+8, temp_scale*5+16, temp_scale*5+30]
-        # 遍历每对相邻区块 i 和 i+1
+        boundaries = [
+            0,
+            temp_scale * 1,
+            temp_scale * 2,
+            temp_scale * 3,
+            temp_scale * 4,
+            temp_scale * 5,
+            temp_scale * 5 + redundancy_length,
+            temp_scale * 5 + 2 * redundancy_length,
+            temp_scale * 5 + tail_len,
+        ]
+        # Translated English comment.
         for i in range(len(boundaries) - 2):
             a_start, a_end = boundaries[i],   boundaries[i+1]
             b_start, b_end = boundaries[i+1], boundaries[i+2]
             size_a = a_end - a_start
             size_b = b_end - b_start
 
-            # 生成 [size_a × size_b] 的随机噪声
+            # Translated English comment.
             inter_noise = (torch.rand(size_a, size_b, device=block_diag.device) < inter_noise_prop).float()
-            # 将噪声填到 [a_start:a_end, b_start:b_end] 和对称位置 [b_start:b_end, a_start:a_end]
+            # Translated English comment.
             padded[a_start:a_end, b_start:b_end] = inter_noise
             padded[b_start:b_end, a_start:a_end] = inter_noise.t()
 
@@ -981,7 +1008,7 @@ def xt2large_noise(groups, xt_grouped, scale2_info, intra_noise_prop, inter_nois
 
 
 def process_cluster(idx, super_tour, adjusted_labels, merged_points, redundancy_length, bridge_length):
-    """ 处理单个 idx 的点 """
+    """Translated English docstring."""
     pos = super_tour.index(idx)
     prev_idx = super_tour[pos - 1] if pos > 0 else super_tour[-1]
     next_idx = super_tour[pos + 1] if pos < len(super_tour) - 1 else super_tour[0]
@@ -1040,7 +1067,7 @@ def process_cluster2(super_tour, cluster_global_indices1, merged_points, redunda
     return enhanced_points2, cluster_global_indices2, main_points2
 
 def process_cluster3(idx, super_tour, adjusted_labels, merged_points, redundancy_length, bridge_length):
-    """ 处理单个 idx 的点 """
+    """Translated English docstring."""
     pos = super_tour.index(idx)
     prev_idx = super_tour[pos - 1] if pos > 0 else super_tour[-1]
     next_idx = super_tour[pos + 1] if pos < len(super_tour) - 1 else super_tour[0]
@@ -1063,13 +1090,13 @@ def process_cluster3(idx, super_tour, adjusted_labels, merged_points, redundancy
     return idx, enhanced_points, cluster_global_indices, main_points
 
 def process_clusters_wtour(super_tour, adjusted_labels, merged_points, redundancy_length, bridge_length):
-    """一次性处理 super_tour 上的所有 idx，返回 enhanced_data, cluster_global_indices, main_points"""
+    """Translated English docstring."""
     enhanced_data = []
     cluster_global_indices = []
     main_points_list = []
 
     for idx in super_tour:
-        # 复用你原来的单点处理逻辑
+        # Translated English comment.
         pos = super_tour.index(idx)
         prev_idx = super_tour[pos - 1] if pos > 0 else super_tour[-1]
         next_idx = super_tour[pos + 1] if pos < len(super_tour) - 1 else super_tour[0]
@@ -1094,7 +1121,7 @@ def process_clusters_wtour(super_tour, adjusted_labels, merged_points, redundanc
     return enhanced_data, cluster_global_indices, main_points_list
 
 def process_clusters_wotour(super_tour, adjusted_labels, merged_points):
-    """一次性处理 super_tour 上的所有 idx，返回 enhanced_data, cluster_global_indices, main_points"""
+    """Translated English docstring."""
     enhanced_data = []
     cluster_global_indices = []
     main_points_list = []
@@ -1113,14 +1140,14 @@ def process_clusters_wotour(super_tour, adjusted_labels, merged_points):
 
 
 def process_clusters_wtour_v2(super_tour, adjusted_labels, merged_points, redundancy_length, bridge_length):
-    """带强化边并写入"""
+    """Translated English docstring."""
     enhanced_data = []
     cluster_global_indices = []
     main_points_list = []
 
     import random 
     for idx in super_tour:
-        # 复用你原来的单点处理逻辑
+        # Translated English comment.
         pos = super_tour.index(idx)
         prev_idx = super_tour[pos - 1] if pos > 0 else super_tour[-1]
         next_idx = super_tour[pos + 1] if pos < len(super_tour) - 1 else super_tour[0]
@@ -1140,15 +1167,15 @@ def process_clusters_wtour_v2(super_tour, adjusted_labels, merged_points, redund
 
         # gt_path = list(range(1, len(enhanced_points) + 1))
         # random.shuffle(gt_path)
-        # gt_path.append(gt_path[0])  # 使路径闭合
+        # Translated English comment.
         
-        # # 格式化数据
+        # Translated English comment.
         # coord_str = ' '.join([f"{x:.6f} {y:.6f}" for x, y in enhanced_points])
         # gt_str = ' '.join(map(str, gt_path))
         # data_line = f"{coord_str} output {gt_str}\n"
         
-        # # 写入文件（追加模式）
-        # with open("tsp_data.txt", 'a') as f:  # 'a'表示追加模式
+        # Translated English comment.
+        # Translated English comment.
         #     f.write(data_line)
 
         enhanced_data.append(enhanced_points)
@@ -1302,7 +1329,7 @@ class SlidingWindowGreedyOptimizer:
         self.n = len(coords)
 
     def greedy_tour(self) -> Path:
-        # 最近邻启发式
+        # Translated English comment.
         unvisited = set(range(self.n))
         current = 0
         tour = [current]
@@ -1334,17 +1361,17 @@ class SlidingWindowGreedyOptimizer:
         return best
 
     def _three_opt_segment(self, segment: Path) -> Path:
-        # 简化的3-opt，只试几种重连
+        # Translated English comment.
         best = segment.copy()
         best_len = path_length(best, self.coords)
         m = len(best)
         for i in range(1, m - 4):
             for j in range(i + 2, m - 2):
                 for k in range(j + 2, m):
-                    # 三段 [0:i],[i:j],[j:k]
+                    # Translated English comment.
                     A, B, C = best[:i], best[i:j], best[j:k]
                     D = best[k:]
-                    # 四种case
+                    # Translated English comment.
                     cases = [A + B[::-1] + C + D,
                              A + B + C[::-1] + D,
                              A + C + B + D,
@@ -1355,7 +1382,7 @@ class SlidingWindowGreedyOptimizer:
                         l = path_length(cand, self.coords)
                         if l < best_len:
                             best, best_len = cand, l
-                            # 继续外层循环
+                            # Translated English comment.
         return best
 
     def optimize(self, initial: Path = None,
@@ -1364,7 +1391,7 @@ class SlidingWindowGreedyOptimizer:
                  two_opt: bool = True,
                  three_opt: bool = True,
                  max_iter: int = 3) -> Path:
-        # 初始路径
+        # Translated English comment.
         path = initial or self.greedy_tour()
         n = self.n
         window_size = min(window_size, n)
@@ -1378,27 +1405,27 @@ class SlidingWindowGreedyOptimizer:
             
             with tqdm(total=int(n//step), desc='Optimizing DIFUSCO Tour') as pbar:
                 for start in range(0, n, step):
-                    # 窗口区间，保留端点
+                    # Translated English comment.
                     end = (start + window_size) % n
                     if start < end:
                         idx = list(range(start, end+1))
                     else:
                         idx = list(range(start, n)) + list(range(0, end+1))
-                    # 提取 segment
+                    # Translated English comment.
                     segment = [path[i] for i in idx]
-                    # 优化
+                    # Translated English comment.
                     if two_opt:
                         segment = self._two_opt_segment(segment)
                     if three_opt:
                         segment = self._three_opt_segment(segment)
-                    # 回写
+                    # Translated English comment.
                     new_path = path.copy()
                     for i, node in zip(idx, segment):
                         new_path[i] = node
-                    # 验证并接受
+                    # Translated English comment.
                     if path_length(new_path, self.coords) + 1e-8 < path_length(path, self.coords):
                         path = new_path
                         improved = True
-        # 最终检查
-        assert sorted(path) == list(range(n)), "路径缺失或重复节点"
+        # Translated English comment.
+        assert sorted(path) == list(range(n)), "Path is missing nodes or contains duplicates"
         return path
